@@ -1,0 +1,15 @@
+{
+"model":{
+    "base_model": "ehartford/dolphin-2.1-mistral-7b",
+    "adapter": "/ext4/py_proj/llm/experiments/e4-5_ds5-1_0-99train/final",
+    "cache_dir": "/ds_fast/model_cache",
+    "torch_dtype": "fp16",
+    "device_map": "auto",
+    "quantization": {
+        "bnb_4bit_quant_type":"nf4",
+        "bnb_4bit_compute_dtype": "bf16",
+        "bnb_4bit_use_double_quant": true
+        }
+    }
+
+}
