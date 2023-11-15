@@ -5,8 +5,9 @@ import time
 import logging
 import datetime as dt
 import sys
+from functools import partial
 
-from src.models.load import LLM
+from src.model import Mistral_chat_LLM
 
 def echo(message, history, system_prompt, tokens, T):
     response = f"Temperature: {T}\nSystem prompt: {system_prompt}\n Message: {message}."
@@ -14,36 +15,40 @@ def echo(message, history, system_prompt, tokens, T):
         time.sleep(0.05)
         yield response[: i+1]
 
+def generate_core(llm, mesage, history, system_prompt,
+                  top_p, top_k, T, penalty_alpha,
+                  max_new_tokens, do_sample,
+                  output_type):
+    pass
+
 
 def start_server(*args):
     SERVER_PORT = 5050
-
-    def my_function(x, progress=gr.Progress()):
-        progress(0, desc="Starting...")
-        time.sleep(1)
-        for i in progress.tqdm(range(100)):
-            time.sleep(0.1)
-        return x
+    output_type = 'streaming'
 
     with gr.Blocks() as demo:
         system_prompt = gr.Textbox("You are helpful AI.", label="System Prompt")
-        T = gr.Number(label="Temperature", value=0.5, interactive=True, render=False)
+
         with gr.Row() as row1:
-            top_p = gr.Number(label="Top p", value=0.85, interactive=True, render=True)
+            top_p = gr.Number(label="Top p", value=0.95, interactive=True, render=True)
+            top_k = gr.Number(label="Top k", value=250, interactive=True, render=True)
+            T = gr.Number(label="Temperature", value=0.5, interactive=True, render=False)
+            penalty_alpha = gr.Number(label="Repetition penalty", value=1.0, interactive=True, render=True)
+            max_new_tokens = gr.Number(label="# new tokens", value=1024, interactive=True, render=True)
             do_sample = gr.Checkbox(value=True, interactive=True, label='Do sampling', render=True)
 
-        #with gr.Row():
-        #    T = gr.Number(label="Temperature", value=0.5, interactive=True, render=False)
-        #    do_sample = gr.Checkbox(value=True, interactive=True, label='Do sampling', render=False)
-
-        slider = gr.Slider(25, 250, render=False)
-
-        gr.Interface(my_function, gr.Textbox(), gr.Textbox())
-
+        generate = partial(generate_core,
+                           system_prompt=system_prompt,
+                           top_p=top_p,
+                           top_k=top_k,
+                           T=T,
+                           penalty_alpha=penalty_alpha,
+                           max_new_tokens=max_new_tokens,
+                           do_sample=do_sample,
+                           output_type=output_type
+                           )
         gr.ChatInterface(
-            echo,
-            additional_inputs=[system_prompt, slider, T]
-            #additional_inputs=[system_prompt, slider]
+            echo
         )
 
     demo.queue().launch(server_port=SERVER_PORT)
@@ -98,9 +103,9 @@ if __name__ == '__main__':
         logger.critical(f'Config file does not contain model config!')
         sys.exit(1)
 
-    llm = LLM(config['model'])
-    llm.load_base_model()
-    #start_server()
+    #llm = LLM(config['model'])
+    #llm.load_base_model()
+    start_server()
 
 
 
