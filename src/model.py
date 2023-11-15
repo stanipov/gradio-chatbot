@@ -366,6 +366,8 @@ class BaseLLM_SingleAdapter:
             return True
         if do_sample != self.do_sample:
             return True
+        if num_beams != self.num_beams:
+            return True
         if max_new_tokens != self.max_new_tokens:
             return True
         if not isClose(self.penalty_alpha, penalty_alpha):
@@ -376,7 +378,7 @@ class BaseLLM_SingleAdapter:
         """
         Sets if necessary a new generation pipeline
         """
-        if self._are_new_args(top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
+        if self._are_new_args(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
             self.pipe = pipeline(
                 task='text-generation',
                 model=self.model,
@@ -394,10 +396,11 @@ class BaseLLM_SingleAdapter:
             self.do_sample = do_sample
             self.num_beams = num_beams
             self.max_new_tokens = max_new_tokens
+            self.logger.info('Updated generation pipeline.')
 
     def set_streamer(self, T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha, timeout=20):
         """ Sets a streamer for generation """
-        if self._are_new_args(top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
+        if self._are_new_args(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
             self.streamer =  TextIteratorStreamer(self.tokenizer,
                                                   timeout=timeout,
                                                   skip_prompt=True,
@@ -408,6 +411,7 @@ class BaseLLM_SingleAdapter:
             self.do_sample = do_sample
             self.num_beams = num_beams
             self.max_new_tokens = max_new_tokens
+            self.logger.info('Updated streamer.')
 
     def gen_stream(self, prompt: str):
         """ Generation streamer """
