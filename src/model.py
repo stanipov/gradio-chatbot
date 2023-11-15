@@ -109,10 +109,9 @@ def parse_config(cfg):
             _t = 'auto'
     ans['load_dtype'] = _t
     return ans
+########################################################################################################################
 
-
-
-class Mistral_chat_LLM:
+class __old_Mistral_chat_LLM:
     def __init__(self, config):
         """ Parses the config """
         self.logger = logging.getLogger(__name__)
@@ -185,9 +184,9 @@ class Mistral_chat_LLM:
             return True
         if not isClose(self.top_p, top_p):
             return True
-        if do_sample!=self.do_sample:
+        if do_sample != self.do_sample:
             return True
-        if max_new_tokens!=self.max_new_tokens:
+        if max_new_tokens != self.max_new_tokens:
             return True
         if not isClose(self.penalty_alpha, penalty_alpha):
             return True
@@ -217,8 +216,6 @@ class Mistral_chat_LLM:
             self.max_new_tokens = max_new_tokens
 
 
-
-
     def set_streamer(self, T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha, timeout=20):
         """ Sets a streamer for generation """
         if self._is_new_pipeline(top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
@@ -232,7 +229,6 @@ class Mistral_chat_LLM:
             self.do_sample = do_sample
             self.num_beams = num_beams
             self.max_new_tokens = max_new_tokens
-
 
 
     def gen_stream(self, prompt: str):
@@ -264,24 +260,208 @@ class Mistral_chat_LLM:
             result = self.pipe(prompt)
             return result[0]['generated_text'].replace(prompt, '')
 
-    def messages2prompt(self, messages):
+    def __old_messages2prompt(self, messages):
         """ Converts ChatML messages to a prompt """
         prompt = ''
         for line in messages:
             prompt += f'{self.bos_tok}{line["role"]}\n{line["content"]}{self.eos_tok}'
         return prompt
 
+    def messages2prompt(self, messages):
+        """ Converts ChatML messages to a prompt """
+        return self.tokenizer.apply_chat_template(messages, tokenize=False)
+
     def prompt4gen(self, prompt):
         """ Adds extra for open-ended generation """
         prompt += f'{self.bos_tok}assistant\n'
         return prompt
+########################################################################################################################
 
-    def gradio_hist2chat_ml(self, history):
-        """ Converts gradio history to ChatML messages. Assuming 0-th element is the system prompt! """
-        messages = []
-        messages.append( {'role': 'system', 'content': history[0]} )
-        for item in history[1:]:
-            messages.append({'role': 'user', 'content': item[0]})
-            messages.append({'role': 'assistant', 'content': item[1]})
+class BaseLLM_SingleAdapter:
+    """
+    Base class for a LLM model with a single adapter
+    """
+    def __init__(self, config):
+        """ Parses the config """
+        self.logger = logging.getLogger(__name__)
+        if not verify_config(config):
+            self.logger.critical('Config is not correct!')
+            sys.exit(-1)
+        else:
+            self.logger.info(f'Config is OK')
+        self.cfg = parse_config(config)
+        self.top_k = -1
+        self.top_p = -1
+        self.T = -1
+        self.max_new_tokens = -1
+        self.num_beams = -1
+        self.do_sample = False
+        self.penalty_alpha = -1
+        self.adapter_change = False
+        self.pipe = None
+        self.streamer = None
+        self.device = 'cpu'
+        self.bos_tok = ""
+        self.eos_tok = ""
 
-        return messages
+    def from_pretrained(self, enable_adapter=True):
+        self.logger.info('Loading base model')
+        self.__load_base_model()
+        self.logger.info('Loading tokenizer')
+        self.__load_tokenizer()
+        if enable_adapter:
+            self.add_adapter()
+            self.enable_adapter()
+
+    def __load_base_model(self):
+        """ Loads the base model """
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.cfg['base_model'],
+            cache_dir=self.cfg['cache_dir'],
+            quantization_config=self.cfg['quant'],
+            device_map=self.cfg['dev_map'],
+            torch_dtype=self.cfg['load_dtype']
+        )
+        self.device = self.model.device
+
+    def __load_tokenizer(self):
+        """ Loads tokenizer """
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=self.cfg['base_model'],
+                                                       cache_dir=self.cfg['cache_dir'], padding_size="left")
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    def add_adapter(self):
+        """ Adds adapter """
+        if self.cfg['adapter']:
+            peft_config2 = PeftConfig.from_pretrained(self.cfg['adapter'])
+            self.model.add_adapter(peft_config2)
+            self.logger.info('Adapter added')
+
+    def enable_adapter(self):
+        """ Enables adapter """
+        if self.cfg['adapter']:
+            self.model.enable_adapters()
+            self.adapter_change = True
+            self.logger.info('Adapter enabled')
+
+    def disable_adapter(self):
+        """ Disables adapter """
+        if self.cfg['adapter']:
+            self.model.enable_adapters()
+            self.adapter_change = True
+
+    def _are_new_args(self, T: float,  top_k: int, top_p: float,
+                         do_sample: bool, num_beams: int,
+                         max_new_tokens: int,
+                         penalty_alpha: float):
+        """ Checks if new pipeline should be created """
+        if self.adapter_change:
+            self.adapter_change = False
+            return True
+        if not isClose(self.T, T):
+            return True
+        if self.top_k != top_k:
+            return True
+        if not isClose(self.top_p, top_p):
+            return True
+        if do_sample != self.do_sample:
+            return True
+        if max_new_tokens != self.max_new_tokens:
+            return True
+        if not isClose(self.penalty_alpha, penalty_alpha):
+            return True
+        return False
+
+    def set_gen_pipeline(self, T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
+        """
+        Sets if necessary a new generation pipeline
+        """
+        if self._are_new_args(top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
+            self.pipe = pipeline(
+                task='text-generation',
+                model=self.model,
+                tokenizer=self.tokenizer,
+                temperature=T,
+                top_k=top_k,
+                top_p=top_p,
+                do_sample=do_sample,
+                num_beams=num_beams,
+                max_new_tokens=max_new_tokens
+            )
+            self.T = T
+            self.top_k = top_k
+            self.top_p = top_p
+            self.do_sample = do_sample
+            self.num_beams = num_beams
+            self.max_new_tokens = max_new_tokens
+
+    def set_streamer(self, T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha, timeout=20):
+        """ Sets a streamer for generation """
+        if self._are_new_args(top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha):
+            self.streamer =  TextIteratorStreamer(self.tokenizer,
+                                                  timeout=timeout,
+                                                  skip_prompt=True,
+                                                  skip_special_tokens=True)
+            self.T = T
+            self.top_k = top_k
+            self.top_p = top_p
+            self.do_sample = do_sample
+            self.num_beams = num_beams
+            self.max_new_tokens = max_new_tokens
+
+    def gen_stream(self, prompt: str):
+        """ Generation streamer """
+        tokenized_prompt = self.tokenizer([prompt], return_tensors="pt").to(self.device)
+        streamer_kw = dict(
+            tokenized_prompt,
+            streamer=self.streamer,
+            max_new_tokens=1024,
+            do_sample=True,
+            top_p=self.top_k,
+            top_k=self.top_k,
+            temperature=1.0,
+            num_beams=1
+        )
+        t = Thread(target=self.model.generate, kwargs=streamer_kw)
+        t.start()
+
+        partial_message = ""
+        for new_token in self.streamer:
+            if new_token != self.bos_tok or new_token != self.eos_tok:
+                partial_message += new_token
+                yield partial_message
+
+    def generate(self, prompt: str, kind='streaming'):
+        if kind == 'streaming':
+            return self.gen_stream(prompt)
+        elif kind == 'pipe':
+            result = self.pipe(prompt)
+            return result[0]['generated_text'].replace(prompt, '')
+
+    def conv_messages_prompt(self, messages):
+        """ Converts ChatML messages to prompt for generation """
+        raise NotImplementedError('Implement this this method for your specific model!')
+
+
+########################################################################################################################
+class Mistral_chat_LLM(BaseLLM_SingleAdapter):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        # specifics for generating prompt for chat
+        # Tokens that do indicate bot response
+        self.bos_tok = "<|im_start|>"
+        self.eos_tok = "<|im_end|>\n"
+
+    def conv_messages_prompt(self, messages):
+        """ Converts ChatML messages to prompt for generation """
+        core_prompt = self.__messages2prompt(messages)
+        return self.__prompt4gen(core_prompt)
+
+    def __messages2prompt(self, messages):
+        """ Converts ChatML messages to a prompt """
+        return self.tokenizer.apply_chat_template(messages, tokenize=False)
+
+    def __prompt4gen(self, prompt):
+        """ Adds extra for open-ended generation """
+        prompt += f'{self.bos_tok}assistant\n'
+        return prompt

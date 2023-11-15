@@ -6,12 +6,15 @@
     "torch_dtype": "fp16",
     "device_map": "auto",
     "bos_token": "<|im_start|>",
-    "eos_token": "<|im_end|>\n"
+    "eos_token": "<|im_end|>\n",
     "quantization": {
         "bnb_4bit_quant_type":"nf4",
         "bnb_4bit_compute_dtype": "bf16",
         "bnb_4bit_use_double_quant": true
         }
+    },
+"app":{
+    "port": 5050,
+    "output_behavior": "streaming"
     }
-
 }

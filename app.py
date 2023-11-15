@@ -8,6 +8,7 @@ import sys
 from functools import partial
 
 from src.model import Mistral_chat_LLM
+from src.utils import merge2ChatML
 
 def echo(message, history, system_prompt, tokens, T):
     response = f"Temperature: {T}\nSystem prompt: {system_prompt}\n Message: {message}."
@@ -15,16 +16,19 @@ def echo(message, history, system_prompt, tokens, T):
         time.sleep(0.05)
         yield response[: i+1]
 
-def generate_core(llm, mesage, history, system_prompt,
+def generate_core(llm, message, history, system_prompt,
                   top_p, top_k, T, penalty_alpha,
                   max_new_tokens, do_sample,
                   output_type):
+    # form ChatML
+    messages = merge2ChatML(message, history, system_prompt)
+
+
+
     pass
 
 
-def start_server(*args):
-    SERVER_PORT = 5050
-    output_type = 'streaming'
+def start_server(llm, server_port: int=5050, output_type:str='streaming'):
 
     with gr.Blocks() as demo:
         system_prompt = gr.Textbox("You are helpful AI.", label="System Prompt")
@@ -38,6 +42,7 @@ def start_server(*args):
             do_sample = gr.Checkbox(value=True, interactive=True, label='Do sampling', render=True)
 
         generate = partial(generate_core,
+                           llm=llm,
                            system_prompt=system_prompt,
                            top_p=top_p,
                            top_k=top_k,
@@ -51,7 +56,7 @@ def start_server(*args):
             echo
         )
 
-    demo.queue().launch(server_port=SERVER_PORT)
+    demo.queue().launch(server_port=server_port)
 
 def set_logger():
     """ Sets up a stdout logger """
@@ -73,6 +78,11 @@ def set_logger():
 
 ##########################################################################################################
 if __name__ == '__main__':
+    # https://www.gradio.app/guides/creating-a-chatbot-fast
+    # https://www.gradio.app/guides/four-kinds-of-interfaces
+    # https://www.gradio.app/docs/interface
+
+
     import json
     import argparse
 
@@ -103,9 +113,12 @@ if __name__ == '__main__':
         logger.critical(f'Config file does not contain model config!')
         sys.exit(1)
 
-    #llm = LLM(config['model'])
-    #llm.load_base_model()
-    start_server()
+    serv_port = config['app'].get('port', 5050)
+    out_behavior = config['app'].get('output_behavior', 'streaming')
+
+    llm = Mistral_chat_LLM(config['model'])
+    llm.load_base_model()
+    start_server(llm, serv_port, out_behavior)
 
 
 
