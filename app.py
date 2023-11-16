@@ -11,33 +11,31 @@ from src.model import Mistral_chat_LLM
 from src.utils import merge2ChatML
 from threading import Thread
 
-def echo(message, history, system_prompt, tokens, T):
-    response = f"Temperature: {T}\nSystem prompt: {system_prompt}\n Message: {message}."
-    for i in range(min(len(response), int(tokens))):
-        time.sleep(0.05)
-        yield response[: i+1]
-
-def __generate_core(message, history, llm, system_prompt, output_type):
-    # Generate prompt
-    logger = logging.getLogger(__name__)
-    #logger.debug(f'Message: {message}')
-    #logger.debug(f'History: {history}')
-    #logger.debug(f'System prompt: {system_prompt}')
-    messages = merge2ChatML(message, history, system_prompt, )
-    prompt = llm.conv_messages_prompt(messages)
-    #logger.debug(f'Prompt: {prompt}')
-    response = llm.generate(prompt=prompt, kind=output_type)
-    return response
-
-
-def generate_core(message, history, system_prompt, llm):
+def generate_core(message, history,
+                  system_prompt, top_p,
+                  top_k, T, num_beams, penalty_alpha,
+                  max_new_tokens, do_sample,
+                  base_llm,
+                  llm):
+    """ Streaming generation """
     # Generate prompt
     messages = merge2ChatML(message, history, system_prompt)
     prompt = llm.conv_messages_prompt(messages)
 
-    llm.logger.debug(f'PROMPT: {prompt}')
+    # unset/set adapter
+    if base_llm:
+        llm.disable_adapter()
+    else:
+        llm.enable_adapter()
+
+    top_k = int(top_k)
+    top_p = float(top_p)
+    num_beams = int(num_beams)
+    max_new_tokens = int(max_new_tokens)
+    penalty_alpha = float(penalty_alpha)
+
+    llm.set_streamer(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
     tokenized_prompt = llm.tokenizer([prompt], return_tensors="pt").to(llm.device)
-    llm.logger.debug(f'TOKENIZED PROMPT: {tokenized_prompt}')
     streamer_kw = dict(
         tokenized_prompt,
         streamer=llm.streamer,
@@ -57,58 +55,6 @@ def generate_core(message, history, system_prompt, llm):
             partial_message += new_token
             yield partial_message
 
-
-
-def start_server(llm, server_port: int = 5050):
-    logger = logging.getLogger(__name__)
-
-    with gr.Blocks() as demo:
-        _system_prompt = gr.Textbox("You are helpful AI chatbot.", label="System Prompt", interactive=True)
-        system_prompt = _system_prompt.value
-        with gr.Accordion(label='Parameters', open=False) as acc1:
-            with gr.Row() as row1:
-                top_p = float(gr.Number(label="Top p", value=0.95, interactive=True, render=True).value)
-                top_k = int(gr.Number(label="Top k", value=250, interactive=True, render=True).value)
-                T = float(gr.Number(label="Temperature", value=0.5, interactive=True, render=True).value)
-                num_beams = int(gr.Number(label="Beams", value=1, interactive=True, render=True).value)
-                penalty_alpha = float(gr.Number(label="Repetition penalty", value=1.5, interactive=True, render=True).value)
-                max_new_tokens = int(gr.Number(label="# new tokens", value=512, interactive=True, render=True).value)
-                do_sample = bool(gr.Checkbox(value=True, interactive=True, label='Do sampling', render=True).value)
-                base_llm = bool(gr.Checkbox(value=False, interactive=True, label='Base LLM', render=True).value)
-                output_type = str(gr.Dropdown(interactive=True, label='Output behavior', value='streaming',
-                                               render=True, choices=['streaming', 'pipe']).value)
-        logger.debug(f'Output behavior: {output_type}')
-        logger.debug(f'max_new_tokens: {max_new_tokens}')
-
-        # unset/set adapter
-        if base_llm:
-            llm.disable_adapter()
-        else:
-            llm.enable_adapter()
-
-        # set up generation part:
-        if output_type=='streaming':
-            llm.set_streamer(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
-        elif output_type=='pipe':
-            llm.set_gen_pipeline(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
-        else:
-            logger.warning(f'Output behavior "{output_type}" is not recognized. Rolling back to streaming.')
-            output_type == 'streaming'
-            llm.set_streamer(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
-
-        #generate = partial(generate_core,
-        #                   llm=llm,
-        #                   system_prompt=system_prompt,
-        #                   output_type=output_type
-        #                   )
-
-
-        gr.ChatInterface(
-            generate_core,
-            additional_inputs=[llm, system_prompt]
-        )
-
-    demo.queue().launch(server_port=server_port)
 
 def set_logger():
     """ Sets up a stdout logger """
@@ -130,10 +76,6 @@ def set_logger():
 
 ##########################################################################################################
 if __name__ == '__main__':
-    # https://www.gradio.app/guides/creating-a-chatbot-fast
-    # https://www.gradio.app/guides/four-kinds-of-interfaces
-    # https://www.gradio.app/docs/interface
-
 
     import json
     import argparse
@@ -171,50 +113,31 @@ if __name__ == '__main__':
     llm = Mistral_chat_LLM(config['model'])
     llm.from_pretrained(enable_adapter=True)
 
-    #start_server(llm, serv_port, out_behavior)
-    with gr.Blocks() as demo:
-        _system_prompt = gr.Textbox("You are helpful AI chatbot.", label="System Prompt", interactive=True)
-        system_prompt = _system_prompt.value
+    with gr.Blocks(theme=gr.themes.Soft()) as ChatBotInterface:
+        system_prompt = gr.Textbox("You are helpful AI chatbot.", label="System Prompt", interactive=True)
         with gr.Accordion(label='Parameters', open=False) as acc1:
             with gr.Row() as row1:
-                top_p = float(gr.Number(label="Top p", value=0.95, interactive=True, render=True).value)
-                top_k = int(gr.Number(label="Top k", value=250, interactive=True, render=True).value)
-                T = float(gr.Number(label="Temperature", value=0.5, interactive=True, render=True).value)
-                num_beams = int(gr.Number(label="Beams", value=1, interactive=True, render=True).value)
-                penalty_alpha = float(
-                    gr.Number(label="Repetition penalty", value=1.5, interactive=True, render=True).value)
-                max_new_tokens = int(gr.Number(label="# new tokens", value=512, interactive=True, render=True).value)
-                do_sample = bool(gr.Checkbox(value=True, interactive=True, label='Do sampling', render=True).value)
-                base_llm = bool(gr.Checkbox(value=False, interactive=True, label='Base LLM', render=True).value)
-                output_type = str(gr.Dropdown(interactive=True, label='Output behavior', value='streaming',
-                                              render=True, choices=['streaming', 'pipe']).value)
-        logger.debug(f'Output behavior: {output_type}')
-        logger.debug(f'max_new_tokens: {max_new_tokens}')
-
-        # unset/set adapter
-        if base_llm:
-            llm.disable_adapter()
-        else:
-            llm.enable_adapter()
-
-        # set up generation part:
-        if output_type == 'streaming':
-            llm.set_streamer(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
-        elif output_type == 'pipe':
-            llm.set_gen_pipeline(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
-        else:
-            logger.warning(f'Output behavior "{output_type}" is not recognized. Rolling back to streaming.')
-            output_type == 'streaming'
-            llm.set_streamer(T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha)
+                top_p = gr.Number(label="Top p", value=0.95, interactive=True, render=True)
+                top_k = gr.Number(label="Top k", value=250, interactive=True, render=True)
+                T = gr.Number(label="Temperature", value=0.5, interactive=True, render=True)
+                num_beams = gr.Number(label="Beams", value=1, interactive=True, render=True)
+                penalty_alpha = gr.Number(label="Repetition penalty", value=1.5, interactive=True, render=True)
+                max_new_tokens = gr.Number(label="# new tokens", value=512, interactive=True, render=True)
+                do_sample = gr.Checkbox(value=True, interactive=True, label='Do sampling', render=True)
+                base_llm = gr.Checkbox(value=False, interactive=True, label='Base LLM', render=True)
 
         generate = partial(generate_core, llm=llm)
 
         gr.ChatInterface(
             generate,
-            additional_inputs=[_system_prompt]
+            additional_inputs=[system_prompt, top_p,
+                 top_k, T, num_beams, penalty_alpha,
+                 max_new_tokens, do_sample,
+                 base_llm],
+
         )
 
-    demo.queue().launch(server_port=serv_port)
+    ChatBotInterface.queue().launch(server_port=serv_port, server_name='0.0.0.0', show_api=False)
 
 
 
