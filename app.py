@@ -65,9 +65,9 @@ def set_logger():
     )
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(logFormatter)
-    ch.setLevel(logging.DEBUG)
+    ch.setLevel(logging.INFO)
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+    root.setLevel(logging.INFO)
     root.addHandler(ch)
     logger = logging.getLogger(__name__)
     return logger
