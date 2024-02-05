@@ -64,6 +64,12 @@ def parse_config(cfg):
     msg = f'Using adapter.' if ans['adapter'] else 'Adapter is not provided.'
     logger.info(msg)
 
+    _t = cfg.get('tokenizer', None)
+    ans['tokenizer'] = _t
+    msg = f'Using tokenizer from the fine-tune.' if ans['adapter'] else 'Using base tokenizer.'
+    logger.info(msg)
+
+
     _t = cfg.get('cache_dir', None)
     ans['cache_dir'] = _t if _t != '' else None
     msg = f'Using cache dir: {ans["cache_dir"]}' if ans['cache_dir'] else 'Using default cache dir.'

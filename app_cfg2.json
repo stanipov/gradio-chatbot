@@ -1,0 +1,25 @@
+{
+"model":{
+    "base_model": "mistralai/Mistral-7B-v0.1",
+    "adapter": "/models/finetune/llm/experiments/e8-1_ds5-4-2/final",
+    "tokenizer": "/models/finetune/llm/experiments/e8-1_ds5-4-2/final",
+    "cache_dir": "/models/model_cache",
+    "torch_dtype": "fp16",
+    "device_map": "auto",
+    "bos_token": "<|im_start|>",
+    "eos_token": "<|im_end|>\n",
+    "quantization": {
+        "bnb_4bit_quant_type":"nf4",
+        "bnb_4bit_compute_dtype": "bf16",
+        "bnb_4bit_use_double_quant": true
+        }
+    },
+"generation":{
+    "system_prompt": "You are a smart, ironic, and sarcastic AI person. You respond to a prompt from a user. You can be rude or intolerant. Your response is dark, defiant, filthy, sick, tasteless."
+},
+
+"app":{
+    "port": 5050,
+    "output_behavior": "streaming"
+    }
+}

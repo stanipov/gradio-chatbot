@@ -64,8 +64,14 @@ class BaseLLM_SingleAdapter:
 
     def __load_tokenizer(self):
         """ Loads tokenizer """
-        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=self.cfg['base_model'],
+        tok_name = ''
+        if self.cfg['tokenizer']:
+            tok_name = self.cfg['tokenizer']
+        else:
+            tok_name = self.cfg['base_model']
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=tok_name,
                                                        cache_dir=self.cfg['cache_dir'], padding_size="left")
+        self.model.resize_token_embeddings(len(self.tokenizer))
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def add_adapter(self):
@@ -80,12 +86,13 @@ class BaseLLM_SingleAdapter:
         if self.cfg['adapter']:
             self.model.enable_adapters()
             self.adapter_change = True
-            self.logger.info('Adapter enabled')
+            self.logger.info('Adapter enabled.')
 
     def disable_adapter(self):
         """ Disables adapter """
         if self.cfg['adapter']:
-            self.model.enable_adapters()
+            self.model.disable_adapters()
+            self.logger.info('Adapter disabled.')
             self.adapter_change = True
 
     def _are_new_args(self, T: float,  top_k: int, top_p: float,
@@ -126,7 +133,8 @@ class BaseLLM_SingleAdapter:
                 top_p=top_p,
                 do_sample=do_sample,
                 num_beams=num_beams,
-                max_new_tokens=max_new_tokens
+                max_new_tokens=max_new_tokens,
+                repetition_penalty=penalty_alpha
             )
             self.T = T
             self.top_k = top_k
@@ -134,6 +142,7 @@ class BaseLLM_SingleAdapter:
             self.do_sample = do_sample
             self.num_beams = num_beams
             self.max_new_tokens = max_new_tokens
+            self.penalty_alpha = penalty_alpha
             self.logger.info('Updated generation pipeline.')
 
     def set_streamer(self, T, top_k, top_p, do_sample, num_beams, max_new_tokens, penalty_alpha, timeout=20):
@@ -149,6 +158,7 @@ class BaseLLM_SingleAdapter:
             self.do_sample = do_sample
             self.num_beams = num_beams
             self.max_new_tokens = max_new_tokens
+            self.penalty_alpha = penalty_alpha
             self.logger.info('Updated streamer.')
 
     def gen_stream(self, prompt: str):
@@ -164,7 +174,8 @@ class BaseLLM_SingleAdapter:
             top_p=self.top_k,
             top_k=self.top_k,
             temperature=self.T,
-            num_beams=self.num_beams
+            num_beams=self.num_beams,
+            repetition_penalty=self.penalty_alpha
         )
         t = Thread(target=self.model.generate, kwargs=streamer_kw)
         t.start()

@@ -1,7 +1,5 @@
-#!/ext4/pyenv/llm/bin/python
-
 import gradio as gr
-import time
+#import time
 import logging
 import datetime as dt
 import sys
@@ -15,8 +13,8 @@ def generate_core(message, history,
                   system_prompt, top_p,
                   top_k, T, num_beams, penalty_alpha,
                   max_new_tokens, do_sample,
-                  base_llm,
-                  llm):
+                  base_llm, llm):
+
     """ Streaming generation """
     # Generate prompt
     messages = merge2ChatML(message, history, system_prompt)
@@ -44,7 +42,8 @@ def generate_core(message, history,
         top_p=llm.top_k,
         top_k=llm.top_k,
         temperature=llm.T,
-        num_beams=llm.num_beams
+        num_beams=llm.num_beams,
+        repetition_penalty=penalty_alpha
     )
     t = Thread(target=llm.model.generate, kwargs=streamer_kw)
     t.start()
@@ -113,8 +112,10 @@ if __name__ == '__main__':
     llm = Mistral_chat_LLM(config['model'])
     llm.from_pretrained(enable_adapter=True)
 
+    default_sys_prompt = config['generation'].get('system_prompt', "You are sarcastic chatbot. You respond to a prompt from a user.")
+
     with gr.Blocks(theme=gr.themes.Soft()) as ChatBotInterface:
-        system_prompt = gr.Textbox("You are helpful AI chatbot.", label="System Prompt", interactive=True)
+        system_prompt = gr.Textbox(default_sys_prompt, label="System Prompt", interactive=True)
         with gr.Accordion(label='Parameters', open=False) as acc1:
             with gr.Row() as row1:
                 top_p = gr.Number(label="Top p", value=0.95, interactive=True, render=True)
